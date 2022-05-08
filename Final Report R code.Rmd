@@ -1,0 +1,147 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(OutlierDetection)
+library(OutliersO3)
+library(outliers)
+library(L1pack)
+library(scales)
+library(caret)
+library(randomForest)
+library(tree)
+```
+
+
+```{r}
+
+df <- read.csv("data2.csv")#Input data 
+
+num_df=df %>% select_if(is.numeric)
+num_df.na <- as.data.frame(scale(na.omit(num_df)))#Scale samples 
+
+train_num = sample(1:nrow(num_df.na), 800)
+num_train <- num_df.na[train_num,]#Setting Training data and test data
+num_test <- num_df.na[-train_num,]
+data.num <- num_train[,1:21]
+data.test <- num_test[,1:21]
+show_df <- num_df[,1:21]
+
+summary(show_df)
+summary(data.num)
+pairs(SalePrice~.,data=data.num)#Plotting pairs among selected features.
+
+quickview <- lm(SalePrice~., data=num_train)#Have a quick on Statistic
+#Significance
+summary(quickview)
+
+boxplot(show_df$SalePrice,main="SalePrice Boxplot")#Create boxplots to collect
+#more information on certain features
+boxplot(num_df$GrLivArea,main="GrLivArea Boxplot")
+boxplot(num_df$OverallQual,main="OverallQual Boxplot")#for OverallQua， 6 is above average, 10 is very excellent, 5 is average
+```
+
+
+
+
+```{r}
+set.seed(42)#Find out outliers by various methods.
+dep <- depthout(data.num,cutoff=0.05) #Depth 
+dep$`Location of Outlier`#Pick detected outliers
+head(data.num[dep$`Location of Outlier`,],5)
+length(dep$`Location of Outlier`)
+
+maha <- maha(data.num,cutoff=0.999)#Outlier detection using Mahalanobis Distance
+length(maha$`Location of Outlier`)
+head(data.num[maha$`Location of Outlier`,],5)
+data.num[maha$`Location of Outlier`,]
+maha
+
+knn_df <- nn(data.num,k=8)#Outlier detection using k Nearest
+#Neighbours Distance method
+outliers_knn <- knn_df$`Location of Outlier`
+head(data.num[knn_df$`Location of Outlier`,],5)
+length(outliers_knn)
+
+kthnn_df <- nnk(data.num[,1:14],k=5)#Outlier detection using kth Nearest
+#Neighbour Distance method
+outliers_kthnn <- kthnn_df$`Location of Outlier`
+
+dens_df <- dens(data.num,k=8,C=1)
+##Outlier detection using Robust Kernal-based Outlier Factor(RKOF) algorithm
+outliers_dens <- dens_df$`Location of Outlier`
+head(data.num[dens_df$`Location of Outlier`,],5)
+length(dens_df$`Location of Outlier`)
+
+OutlierDetection(data.num)$'Outlier Observations'
+OutlierDetection(data.num)$`Location of Outlier`
+head(data.num[OutlierDetection(data.num)$`Location of Outlier`,],5)
+length(OutlierDetection(data.num)$`Location of Outlier`)
+which(dens_df$`Location of Outlier`== knn_df$`Location of Outlier`)
+
+length(maha$`Location of Outlier`)#Check the number of detected outliers
+length(outliers_knn)
+length(outliers_kthnn)
+length(outliers_dens)
+```
+
+
+```{r}
+lad.fit <- lad(SalePrice~.,data=data.num)#LAD Regression
+lm.fit <- lm(SalePrice~.,data=data.num)#LM Regression
+par(mfrow=c(2,2))
+plot(lm.fit)
+par(mfrow=c(1,2))# over-dispersed relative to a normal distribution (in this case it is a Laplace distribution). Over-dispersed data has an increased number of outliers 
+plot(lad.fit)
+hist(lad.fit$fitted.values)
+
+tree.fit=tree(SalePrice~.,data=show_df)#Decision Tree
+plot(tree.fit)
+text(tree.fit,cex=0.8)
+rf.fit <- randomForest(SalePrice~.,data=data.num,mtry=20,ntree=1000,importance = TRUE)
+#Random Forest Algorithm
+plot(rf.fit)
+
+summary(lm.fit)
+summary(rf.fit)
+summary(predict(lm.fit,newdata=data.test))
+summary(predict(lad.fit,newdata=data.test))
+summary(num_df.na$SalePrice)
+
+#pr=predict(lm.fit,num_test,type = "response")
+ac <- num_test$SalePrice
+
+find_accu <- function(fit){#Generate function to find accuracy
+  pr=predict(fit,num_test,type = "response")
+  pred.01 <- as.factor(ifelse(pr>mean(pr),1,0))
+  actual.01 <- as.factor(ifelse(ac>mean(ac),1,0))
+  confusionMatrix(pred.01,actual.01)
+}
+find_accu(rf.fit)#Find accuracy of selected model
+find_accu(lad.fit)
+find_accu(lm.fit)
+
+find_R2 <- function(pred,actual){ #Generate a function to find out R2 value
+  rss <- sum((pred - actual)^2)  ## residual sum of squares
+  tss <- sum((actual - mean(actual))^2)  ## total sum of squares
+  rsq <- 1 - rss/tss
+  return(rsq)
+}
+
+
+
+find_R2(predict(lm.fit,newdata=data.test),data.test[,21])#Find R2 value on test data set
+find_R2(predict(lad.fit,newdata=data.test),data.test[,21])
+
+set.seed(1)
+rf.fit <- randomForest(SalePrice~.,data=data.num,mtry=2,ntree=500,importance = FALSE)
+find_R2(predict(rf.fit,newdata=data.test),data.test[,21])
+
+```
